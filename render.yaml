@@ -17,3 +17,5 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: ADMIN_EMAILS
+        value: aydosed@gmail.com
