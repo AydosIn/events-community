@@ -223,3 +223,24 @@ class AdminUserDetailOut(BaseModel):
     registrations_count: int
     is_admin: bool = False
     registrations: list[AdminUserRegistrationOut]
+
+
+class AdminCreateIn(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+
+
+class AdminOut(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AdminListOut(BaseModel):
+    items: list[AdminOut]
+    total: int

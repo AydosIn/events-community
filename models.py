@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
 
 from database import Base
 
@@ -13,6 +13,7 @@ class User(Base):
     google_sub = Column(String, nullable=True, unique=True, index=True)
     auth_provider = Column(String, nullable=False, server_default="local", default="local")
     avatar_url = Column(String, nullable=True)
+    is_admin = Column(Boolean, nullable=False, default=False, server_default="0")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     last_login_at = Column(DateTime, nullable=True)
 

@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
 
 import models
-from config import CORS_ORIGINS
-from database import Base, engine
+from config import ADMIN_EMAILS, CORS_ORIGINS
+from database import Base, SessionLocal, engine
 from routers import admin, auth, opportunities, registrations
 
 
@@ -49,6 +50,35 @@ def ensure_user_auth_columns() -> None:
                 pass
 
 
+def ensure_is_admin_column() -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("users")}
+
+    with engine.begin() as connection:
+        if "is_admin" not in existing_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+
+
+def bootstrap_admin_emails() -> None:
+    """Promote existing ADMIN_EMAILS env-var users to is_admin=True (one-time migration path)."""
+    if not ADMIN_EMAILS:
+        return
+
+    db: Session = SessionLocal()
+    try:
+        for email in ADMIN_EMAILS:
+            db.execute(
+                text("UPDATE users SET is_admin = 1 WHERE LOWER(email) = :email AND is_admin = 0"),
+                {"email": email.lower()},
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
 def ensure_registration_profile_columns() -> None:
     inspector = inspect(engine)
     if "registrations" not in inspector.get_table_names():
@@ -82,7 +112,9 @@ def ensure_registration_profile_columns() -> None:
 def on_startup():
     Base.metadata.create_all(bind=engine)
     ensure_user_auth_columns()
+    ensure_is_admin_column()
     ensure_registration_profile_columns()
+    bootstrap_admin_emails()
 
 
 @app.get("/")

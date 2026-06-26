@@ -9,7 +9,7 @@ from config import GOOGLE_CLIENT_ID
 from database import get_db
 from models import User
 from schemas import GoogleAuthIn, Token, UserCreate, UserLogin, UserOut
-from security import create_access_token, hash_password, is_admin_email, verify_password
+from security import create_access_token, hash_password, verify_password
 
 
 router = APIRouter()
@@ -36,7 +36,7 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut
         email=user.email,
         auth_provider=user.auth_provider,
         avatar_url=user.avatar_url,
-        is_admin=is_admin_email(user.email),
+        is_admin=user.is_admin,
     )
 
 
@@ -53,7 +53,7 @@ def login_user(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
         access_token=create_access_token(user.id),
         token_type="bearer",
         full_name=user.full_name,
-        is_admin=is_admin_email(user.email),
+        is_admin=user.is_admin,
     )
 
 
@@ -118,5 +118,5 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
         access_token=create_access_token(user.id),
         token_type="bearer",
         full_name=user.full_name,
-        is_admin=is_admin_email(user.email),
+        is_admin=user.is_admin,
     )

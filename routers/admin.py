@@ -8,6 +8,9 @@ from database import get_db
 from models import Opportunity, Registration, User
 from schemas import (
     AdminAnalyticsOut,
+    AdminCreateIn,
+    AdminListOut,
+    AdminOut,
     AdminRegistrationDetailOut,
     AdminOpportunityListOut,
     AdminOverviewOut,
@@ -25,7 +28,7 @@ from schemas import (
     RegistrationTypeBreakdown,
     TopOpportunityOut,
 )
-from security import get_admin_user, is_admin_email
+from security import get_admin_user, hash_password
 
 
 router = APIRouter()
@@ -399,6 +402,7 @@ def list_admin_users(
             User.email,
             User.auth_provider,
             User.avatar_url,
+            User.is_admin,
             User.created_at,
             User.last_login_at,
             func.count(Registration.id).label("registrations_count"),
@@ -425,7 +429,7 @@ def list_admin_users(
             created_at=row.created_at,
             last_login_at=row.last_login_at,
             registrations_count=row.registrations_count,
-            is_admin=is_admin_email(row.email),
+            is_admin=row.is_admin,
         )
         for row in rows
     ]
@@ -467,7 +471,7 @@ def get_admin_user_detail(
         created_at=user.created_at,
         last_login_at=user.last_login_at,
         registrations_count=len(registrations),
-        is_admin=is_admin_email(user.email),
+        is_admin=user.is_admin,
         registrations=[
             AdminUserRegistrationOut(
                 registration_id=row.registration_id,
@@ -480,3 +484,61 @@ def get_admin_user_detail(
             for row in registrations
         ],
     )
+
+
+@router.get("/admins", response_model=AdminListOut)
+def list_admins(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminListOut:
+    admins = db.query(User).filter(User.is_admin == True).order_by(User.created_at.asc()).all()  # noqa: E712
+    return AdminListOut(
+        items=[AdminOut(id=a.id, full_name=a.full_name, email=a.email, created_at=a.created_at) for a in admins],
+        total=len(admins),
+    )
+
+
+@router.post("/admins", response_model=AdminOut, status_code=status.HTTP_201_CREATED)
+def create_admin(
+    payload: AdminCreateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminOut:
+    existing = db.query(User).filter(User.email == payload.email.lower()).first()
+    if existing is not None:
+        if existing.is_admin:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This email is already an admin")
+        existing.is_admin = True
+        existing.password_hash = hash_password(payload.password)
+        db.commit()
+        db.refresh(existing)
+        return AdminOut(id=existing.id, full_name=existing.full_name, email=existing.email, created_at=existing.created_at)
+
+    new_admin = User(
+        full_name=payload.full_name.strip(),
+        email=payload.email.lower(),
+        password_hash=hash_password(payload.password),
+        auth_provider="local",
+        is_admin=True,
+    )
+    db.add(new_admin)
+    db.commit()
+    db.refresh(new_admin)
+    return AdminOut(id=new_admin.id, full_name=new_admin.full_name, email=new_admin.email, created_at=new_admin.created_at)
+
+
+@router.delete("/admins/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_admin(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+) -> None:
+    if current_admin.id == user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot revoke your own admin access")
+
+    target = db.get(User, user_id)
+    if target is None or not target.is_admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found")
+
+    target.is_admin = False
+    db.commit()

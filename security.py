@@ -6,19 +6,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from config import ACCESS_TOKEN_EXPIRE_HOURS, ADMIN_EMAILS, ALGORITHM, SECRET_KEY
+from config import ACCESS_TOKEN_EXPIRE_HOURS, ALGORITHM, SECRET_KEY
 from database import get_db
 from models import User
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-def is_admin_email(email: str | None) -> bool:
-    if not email:
-        return False
-
-    return email.strip().lower() in ADMIN_EMAILS
 
 
 def hash_password(password: str) -> str:
@@ -65,7 +58,7 @@ def get_current_user(
 
 
 def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    if not is_admin_email(current_user.email):
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
