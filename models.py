@@ -14,6 +14,7 @@ class User(Base):
     auth_provider = Column(String, nullable=False, server_default="local", default="local")
     avatar_url = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+    last_login_at = Column(DateTime, nullable=True)
 
 
 class Opportunity(Base):

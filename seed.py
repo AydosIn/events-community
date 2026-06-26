@@ -120,6 +120,78 @@ SAMPLE_OPPORTUNITIES = [
         "type": "project",
         "region_name": "Turtkul",
     },
+    {
+        "title": "Nukus Web Development Club",
+        "description": "Weekly beginner-friendly sessions for HTML, CSS, JavaScript, and small portfolio projects.",
+        "type": "club",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "Karakalpakstan Youth Debate Club",
+        "description": "Practice debate, critical thinking, and public speaking in Uzbek, Karakalpak, and English.",
+        "type": "club",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "Girls in Tech Meetup",
+        "description": "A supportive community for girls exploring coding, design, product ideas, and tech careers.",
+        "type": "club",
+        "region_name": "Khodjeyli",
+    },
+    {
+        "title": "Saturday English Speaking Circle",
+        "description": "Casual speaking practice, vocabulary games, and confidence-building conversations.",
+        "type": "club",
+        "region_name": "Beruniy",
+    },
+    {
+        "title": "Student Volunteer Day",
+        "description": "A one-day community service event where students help with local clean-up and outreach tasks.",
+        "type": "workshop",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "CV and Interview Bootcamp",
+        "description": "Learn how to write a clear CV, prepare for interviews, and present your experience confidently.",
+        "type": "workshop",
+        "region_name": "Turtkul",
+    },
+    {
+        "title": "AI Tools for Students Workshop",
+        "description": "Hands-on practice using AI tools responsibly for research, writing, planning, and learning.",
+        "type": "workshop",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "First Website Weekend",
+        "description": "Build and publish a simple personal website in two days with mentors and peer support.",
+        "type": "workshop",
+        "region_name": "Khodjeyli",
+    },
+    {
+        "title": "Local Events Calendar Project",
+        "description": "Help collect and organize youth-friendly events, clubs, and workshops across Karakalpakstan.",
+        "type": "project",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "Community Map Project",
+        "description": "Create a map of useful student places such as libraries, study rooms, clubs, and activity centers.",
+        "type": "project",
+        "region_name": "Beruniy",
+    },
+    {
+        "title": "School Mentorship Project",
+        "description": "Pair older students with younger learners for study advice, motivation, and project support.",
+        "type": "project",
+        "region_name": "Turtkul",
+    },
+    {
+        "title": "Youth Climate Ideas Sprint",
+        "description": "Form small teams and propose practical climate or environment ideas for local communities.",
+        "type": "project",
+        "region_name": "Khodjeyli",
+    },
 ]
 
 

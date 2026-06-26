@@ -9,6 +9,10 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "events_community.db"
 DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH.as_posix()}"
+DEPLOYED_FRONTEND_ORIGINS = [
+    "https://events-community-frontend.vercel.app",
+    "https://events-community-frontend-6ks2v9vi1-aydosed-3118s-projects.vercel.app",
+]
 
 
 def _split_csv(value: str) -> list[str]:
@@ -17,6 +21,10 @@ def _split_csv(value: str) -> list[str]:
 
 def _split_lower_csv(value: str) -> list[str]:
     return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+
+def _unique_values(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
 
 
 def _is_production() -> bool:
@@ -58,6 +66,8 @@ DATABASE_URL = _get_database_url()
 SECRET_KEY = _get_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
-CORS_ORIGINS = _split_csv(os.getenv("CORS_ORIGINS", "http://localhost:3000"))
+CORS_ORIGINS = _unique_values(
+    _split_csv(os.getenv("CORS_ORIGINS", "http://localhost:3000")) + DEPLOYED_FRONTEND_ORIGINS
+)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 ADMIN_EMAILS = _split_lower_csv(os.getenv("ADMIN_EMAILS", ""))

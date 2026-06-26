@@ -191,6 +191,7 @@ class AdminUserItemOut(BaseModel):
     auth_provider: str | None = None
     avatar_url: str | None = None
     created_at: datetime | None = None
+    last_login_at: datetime | None = None
     registrations_count: int
     is_admin: bool = False
 
@@ -218,6 +219,7 @@ class AdminUserDetailOut(BaseModel):
     auth_provider: str | None = None
     avatar_url: str | None = None
     created_at: datetime | None = None
+    last_login_at: datetime | None = None
     registrations_count: int
     is_admin: bool = False
     registrations: list[AdminUserRegistrationOut]

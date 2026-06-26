@@ -400,6 +400,7 @@ def list_admin_users(
             User.auth_provider,
             User.avatar_url,
             User.created_at,
+            User.last_login_at,
             func.count(Registration.id).label("registrations_count"),
         )
         .outerjoin(Registration, Registration.user_id == User.id)
@@ -422,6 +423,7 @@ def list_admin_users(
             auth_provider=row.auth_provider,
             avatar_url=row.avatar_url,
             created_at=row.created_at,
+            last_login_at=row.last_login_at,
             registrations_count=row.registrations_count,
             is_admin=is_admin_email(row.email),
         )
@@ -463,6 +465,7 @@ def get_admin_user_detail(
         auth_provider=user.auth_provider,
         avatar_url=user.avatar_url,
         created_at=user.created_at,
+        last_login_at=user.last_login_at,
         registrations_count=len(registrations),
         is_admin=is_admin_email(user.email),
         registrations=[

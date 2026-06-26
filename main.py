@@ -37,6 +37,9 @@ def ensure_user_auth_columns() -> None:
         if "avatar_url" not in existing_columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR"))
 
+        if "last_login_at" not in existing_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+
         if "password_hash" in existing_columns:
             try:
                 connection.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))

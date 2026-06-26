@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -43,6 +45,9 @@ def login_user(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    user.last_login_at = datetime.utcnow()
+    db.commit()
 
     return Token(
         access_token=create_access_token(user.id),
@@ -105,6 +110,7 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
         if picture:
             user.avatar_url = picture
 
+    user.last_login_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
 
