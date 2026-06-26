@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -5,6 +7,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Opportunity, Registration, User
 from schemas import (
+    AdminAnalyticsOut,
     AdminRegistrationDetailOut,
     AdminOpportunityListOut,
     AdminOverviewOut,
@@ -18,6 +21,9 @@ from schemas import (
     OpportunityCreate,
     OpportunityOut,
     OpportunityUpdate,
+    RegistrationRegionBreakdown,
+    RegistrationTypeBreakdown,
+    TopOpportunityOut,
 )
 from security import get_admin_user, is_admin_email
 
@@ -40,6 +46,90 @@ def get_admin_overview(
         users_count=db.query(func.count(User.id)).scalar() or 0,
         opportunities_count=db.query(func.count(Opportunity.id)).scalar() or 0,
         registrations_count=db.query(func.count(Registration.id)).scalar() or 0,
+    )
+
+
+@router.get("/analytics", response_model=AdminAnalyticsOut)
+def get_admin_analytics(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminAnalyticsOut:
+    # SQLite stores naive UTC timestamps; keep comparisons naive for compatibility.
+    now = datetime.utcnow()
+    seven_days_ago = now - timedelta(days=7)
+    thirty_days_ago = now - timedelta(days=30)
+
+    type_rows = (
+        db.query(Opportunity.type, func.count(Registration.id).label("count"))
+        .join(Registration, Registration.opportunity_id == Opportunity.id)
+        .group_by(Opportunity.type)
+        .order_by(func.count(Registration.id).desc(), Opportunity.type.asc())
+        .all()
+    )
+
+    region_rows = (
+        db.query(Opportunity.region_name, func.count(Registration.id).label("count"))
+        .join(Registration, Registration.opportunity_id == Opportunity.id)
+        .group_by(Opportunity.region_name)
+        .order_by(func.count(Registration.id).desc(), Opportunity.region_name.asc())
+        .all()
+    )
+
+    top_rows = (
+        db.query(
+            Opportunity.id.label("opportunity_id"),
+            Opportunity.title,
+            Opportunity.type,
+            Opportunity.region_name,
+            func.count(Registration.id).label("registrations_count"),
+        )
+        .outerjoin(Registration, Registration.opportunity_id == Opportunity.id)
+        .group_by(Opportunity.id)
+        .order_by(func.count(Registration.id).desc(), Opportunity.id.asc())
+        .limit(10)
+        .all()
+    )
+
+    registrations_count = db.query(func.count(Registration.id)).scalar() or 0
+    opportunities_count = db.query(func.count(Opportunity.id)).scalar() or 0
+    registrations_last_7_days = (
+        db.query(func.count(Registration.id))
+        .filter(Registration.created_at >= seven_days_ago)
+        .scalar()
+        or 0
+    )
+    registrations_last_30_days = (
+        db.query(func.count(Registration.id))
+        .filter(Registration.created_at >= thirty_days_ago)
+        .scalar()
+        or 0
+    )
+
+    average_registrations_per_opportunity = (
+        round(registrations_count / opportunities_count, 2) if opportunities_count else 0.0
+    )
+
+    return AdminAnalyticsOut(
+        registrations_by_type=[
+            RegistrationTypeBreakdown(type=row.type, count=row.count) for row in type_rows
+        ],
+        registrations_by_region=[
+            RegistrationRegionBreakdown(region_name=row.region_name, count=row.count)
+            for row in region_rows
+        ],
+        top_opportunities=[
+            TopOpportunityOut(
+                opportunity_id=row.opportunity_id,
+                title=row.title,
+                type=row.type,
+                region_name=row.region_name,
+                registrations_count=row.registrations_count,
+            )
+            for row in top_rows
+        ],
+        registrations_last_7_days=registrations_last_7_days,
+        registrations_last_30_days=registrations_last_30_days,
+        average_registrations_per_opportunity=average_registrations_per_opportunity,
     )
 
 

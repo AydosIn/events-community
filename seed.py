@@ -1,3 +1,12 @@
+"""
+Seed sample opportunities into the database.
+
+Local:  python seed.py
+Production (one-time demo): run once after deploy with DATABASE_URL pointing at the
+persistent SQLite file, or use the Render shell. Skip this if you will add real
+opportunities through the admin UI instead.
+"""
+
 from database import Base, SessionLocal, engine
 from models import Opportunity
 
@@ -63,25 +72,78 @@ SAMPLE_OPPORTUNITIES = [
         "type": "club",
         "region_name": "Namangan",
     },
+    {
+        "title": "Campus Chess Club",
+        "description": "Friendly weekly chess sessions, mini tournaments, and strategy practice.",
+        "type": "club",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "Green Future Club",
+        "description": "Plan eco campaigns, clean-up days, and student sustainability ideas.",
+        "type": "club",
+        "region_name": "Khodjeyli",
+    },
+    {
+        "title": "Creative Coding Club",
+        "description": "Build fun websites, small games, and digital experiments together.",
+        "type": "club",
+        "region_name": "Beruniy",
+    },
+    {
+        "title": "Volunteer Action Club",
+        "description": "Coordinate student volunteering for schools, parks, and local events.",
+        "type": "club",
+        "region_name": "Turtkul",
+    },
+    {
+        "title": "Local History Story Lab",
+        "description": "Collect stories, photos, and interviews about community history.",
+        "type": "project",
+        "region_name": "Nukus",
+    },
+    {
+        "title": "Student Help Desk Project",
+        "description": "Design a simple peer-to-peer support system for campus questions.",
+        "type": "project",
+        "region_name": "Khodjeyli",
+    },
+    {
+        "title": "Mini Startup Sprint",
+        "description": "Launch a tiny student product in four weeks with a small team.",
+        "type": "project",
+        "region_name": "Beruniy",
+    },
+    {
+        "title": "Youth Podcast Project",
+        "description": "Record short podcast episodes about education, careers, and student life.",
+        "type": "project",
+        "region_name": "Turtkul",
+    },
 ]
+
+
+def seed_sample_opportunities() -> int:
+    db = SessionLocal()
+    try:
+        existing_titles = {title for (title,) in db.query(Opportunity.title).all()}
+        inserted_count = 0
+        for item in SAMPLE_OPPORTUNITIES:
+            if item["title"] in existing_titles:
+                continue
+            db.add(Opportunity(**item))
+            inserted_count += 1
+
+        db.commit()
+        return inserted_count
+    finally:
+        db.close()
 
 
 def main() -> None:
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        existing_count = db.query(Opportunity).count()
-        if existing_count > 0:
-            print(f"Seed skipped: opportunities table already has {existing_count} records.")
-            return
-
-        for item in SAMPLE_OPPORTUNITIES:
-            db.add(Opportunity(**item))
-
-        db.commit()
-        print(f"Inserted {len(SAMPLE_OPPORTUNITIES)} sample opportunities.")
-    finally:
-        db.close()
+    inserted_count = seed_sample_opportunities()
+    print(f"Inserted {inserted_count} sample opportunities.")
 
 
 if __name__ == "__main__":

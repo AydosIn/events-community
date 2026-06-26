@@ -1,26 +1,45 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "events_community.db"
+DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH.as_posix()}"
 
 
 def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _split_lower_csv(value: str) -> list[str]:
+    return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+
 def _is_production() -> bool:
-    return os.getenv("RENDER") == "true" or os.getenv("ENVIRONMENT", "").lower() == "production"
+    return any(
+        (
+            os.getenv("RENDER") == "true",
+            os.getenv("ENVIRONMENT", "").lower() == "production",
+            os.getenv("DIGITALOCEAN_APP_ID"),
+        )
+    )
+
+
+def _is_development() -> bool:
+    return os.getenv("ENVIRONMENT", "").lower() in {"", "development", "local"}
 
 
 def _get_database_url() -> str:
-    database_url = os.getenv("DATABASE_URL")
-
-    if database_url:
-        return database_url
-
-    if _is_production():
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url and not database_url.startswith("sqlite"):
         raise RuntimeError(
-            "DATABASE_URL is required in production. Set it in Render to your managed Postgres URL."
+            "Only SQLite is supported. Set DATABASE_URL to a sqlite:// path or leave it unset for the default."
         )
-
-    return "postgresql://postgres:postgres@localhost:5432/events_community"
+    return database_url or DEFAULT_DATABASE_URL
 
 
 def _get_secret_key() -> str:
@@ -29,10 +48,10 @@ def _get_secret_key() -> str:
     if secret_key:
         return secret_key
 
-    if _is_production():
-        raise RuntimeError("SECRET_KEY is required in production. Set it in Render before deploying.")
+    if _is_development():
+        return "dev-only-change-before-deploy"
 
-    return "events_community_secret"
+    raise RuntimeError("SECRET_KEY is required in this environment. Set it in your hosting platform before deploying.")
 
 
 DATABASE_URL = _get_database_url()
@@ -41,3 +60,4 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
 CORS_ORIGINS = _split_csv(os.getenv("CORS_ORIGINS", "http://localhost:3000"))
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+ADMIN_EMAILS = _split_lower_csv(os.getenv("ADMIN_EMAILS", ""))

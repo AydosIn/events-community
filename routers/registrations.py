@@ -31,7 +31,15 @@ def create_registration(
     if existing_registration is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already registered")
 
-    registration = Registration(user_id=current_user.id, opportunity_id=payload.opportunity_id)
+    registration = Registration(
+        user_id=current_user.id,
+        opportunity_id=payload.opportunity_id,
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
+        age=payload.age,
+        phone_number=payload.phone_number.strip(),
+        telegram_username=payload.telegram_username.strip().lstrip("@"),
+    )
     db.add(registration)
     db.commit()
     db.refresh(registration)

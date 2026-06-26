@@ -95,6 +95,33 @@ class AdminOverviewOut(BaseModel):
     registrations_count: int
 
 
+class RegistrationTypeBreakdown(BaseModel):
+    type: str
+    count: int
+
+
+class RegistrationRegionBreakdown(BaseModel):
+    region_name: str
+    count: int
+
+
+class TopOpportunityOut(BaseModel):
+    opportunity_id: int
+    title: str
+    type: str
+    region_name: str
+    registrations_count: int
+
+
+class AdminAnalyticsOut(BaseModel):
+    registrations_by_type: list[RegistrationTypeBreakdown]
+    registrations_by_region: list[RegistrationRegionBreakdown]
+    top_opportunities: list[TopOpportunityOut]
+    registrations_last_7_days: int
+    registrations_last_30_days: int
+    average_registrations_per_opportunity: float
+
+
 class AdminListMeta(BaseModel):
     total: int
     limit: int
