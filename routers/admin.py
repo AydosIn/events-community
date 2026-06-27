@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from config import ADMIN_EMAILS
 from database import get_db
-from models import Opportunity, Registration, User
+from models import AdminEmail, Opportunity, Registration, User
 from schemas import (
     AdminAnalyticsOut,
     AdminCreateIn,
@@ -28,7 +29,7 @@ from schemas import (
     RegistrationTypeBreakdown,
     TopOpportunityOut,
 )
-from security import get_admin_user, hash_password
+from security import get_admin_user
 
 
 router = APIRouter()
@@ -491,11 +492,42 @@ def list_admins(
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
 ) -> AdminListOut:
-    admins = db.query(User).filter(User.is_admin == True).order_by(User.created_at.asc()).all()  # noqa: E712
-    return AdminListOut(
-        items=[AdminOut(id=a.id, full_name=a.full_name, email=a.email, created_at=a.created_at) for a in admins],
-        total=len(admins),
+    admin_email_rows = db.query(AdminEmail).order_by(AdminEmail.created_at.asc()).all()
+    admin_emails = {row.email for row in admin_email_rows}
+    users_by_email = {
+        user.email.lower(): user
+        for user in db.query(User).filter(User.email.in_(admin_emails)).all()
+    }
+
+    items = [
+        AdminOut(
+            id=row.id,
+            full_name=users_by_email.get(row.email).full_name if users_by_email.get(row.email) else None,
+            email=row.email,
+            created_at=row.created_at,
+            user_id=users_by_email.get(row.email).id if users_by_email.get(row.email) else None,
+        )
+        for row in admin_email_rows
+    ]
+
+    legacy_admins = (
+        db.query(User)
+        .filter(User.is_admin == True, ~User.email.in_(admin_emails))  # noqa: E712
+        .order_by(User.created_at.asc())
+        .all()
     )
+    items.extend(
+        AdminOut(
+            id=user.id,
+            full_name=user.full_name,
+            email=user.email,
+            created_at=user.created_at,
+            user_id=user.id,
+        )
+        for user in legacy_admins
+    )
+
+    return AdminListOut(items=items, total=len(items))
 
 
 @router.post("/admins", response_model=AdminOut, status_code=status.HTTP_201_CREATED)
@@ -504,41 +536,51 @@ def create_admin(
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
 ) -> AdminOut:
-    existing = db.query(User).filter(User.email == payload.email.lower()).first()
-    if existing is not None:
-        if existing.is_admin:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This email is already an admin")
-        existing.is_admin = True
-        existing.password_hash = hash_password(payload.password)
-        db.commit()
-        db.refresh(existing)
-        return AdminOut(id=existing.id, full_name=existing.full_name, email=existing.email, created_at=existing.created_at)
+    email = payload.email.lower()
+    existing_admin_email = db.query(AdminEmail).filter(AdminEmail.email == email).first()
+    if existing_admin_email is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This email is already an admin")
 
-    new_admin = User(
-        full_name=payload.full_name.strip(),
-        email=payload.email.lower(),
-        password_hash=hash_password(payload.password),
-        auth_provider="local",
-        is_admin=True,
-    )
-    db.add(new_admin)
+    admin_email = AdminEmail(email=email)
+    db.add(admin_email)
+
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user is not None:
+        existing_user.is_admin = True
+
     db.commit()
-    db.refresh(new_admin)
-    return AdminOut(id=new_admin.id, full_name=new_admin.full_name, email=new_admin.email, created_at=new_admin.created_at)
+    db.refresh(admin_email)
+    return AdminOut(
+        id=admin_email.id,
+        full_name=existing_user.full_name if existing_user else None,
+        email=admin_email.email,
+        created_at=admin_email.created_at,
+        user_id=existing_user.id if existing_user else None,
+    )
 
 
-@router.delete("/admins/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/admins/{email}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_admin(
-    user_id: int,
+    email: str,
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ) -> None:
-    if current_admin.id == user_id:
+    normalized_email = email.strip().lower()
+    if current_admin.email.lower() == normalized_email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot revoke your own admin access")
 
-    target = db.get(User, user_id)
-    if target is None or not target.is_admin:
+    if normalized_email in ADMIN_EMAILS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Configured admin emails cannot be removed")
+
+    admin_email = db.query(AdminEmail).filter(AdminEmail.email == normalized_email).first()
+    target = db.query(User).filter(User.email == normalized_email).first()
+    if admin_email is None and (target is None or not target.is_admin):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found")
 
-    target.is_admin = False
+    if admin_email is not None:
+        db.delete(admin_email)
+
+    if target is not None:
+        target.is_admin = False
+
     db.commit()

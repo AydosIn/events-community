@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 import models
 from config import ADMIN_EMAILS, CORS_ORIGINS
 from database import Base, SessionLocal, engine
+from models import AdminEmail
 from routers import admin, auth, opportunities, registrations
 
 
@@ -63,13 +64,17 @@ def ensure_is_admin_column() -> None:
 
 
 def bootstrap_admin_emails() -> None:
-    """Promote existing ADMIN_EMAILS env-var users to is_admin=True (one-time migration path)."""
+    """Seed configured admin emails and promote matching existing users."""
     if not ADMIN_EMAILS:
         return
 
     db: Session = SessionLocal()
     try:
         for email in ADMIN_EMAILS:
+            existing_admin_email = db.query(AdminEmail).filter(AdminEmail.email == email.lower()).first()
+            if existing_admin_email is None:
+                db.add(AdminEmail(email=email.lower()))
+
             db.execute(
                 text("UPDATE users SET is_admin = 1 WHERE LOWER(email) = :email AND is_admin = 0"),
                 {"email": email.lower()},

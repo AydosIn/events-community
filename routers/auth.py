@@ -9,7 +9,7 @@ from config import GOOGLE_CLIENT_ID
 from database import get_db
 from models import User
 from schemas import GoogleAuthIn, Token, UserCreate, UserLogin, UserOut
-from security import create_access_token, get_current_user, hash_password, verify_password
+from security import create_access_token, get_current_user, hash_password, is_admin_email, sync_admin_access, verify_password
 
 
 router = APIRouter()
@@ -26,6 +26,7 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut
         email=payload.email.lower(),
         password_hash=hash_password(payload.password),
         auth_provider="local",
+        is_admin=is_admin_email(payload.email, db),
     )
     db.add(user)
     db.commit()
@@ -41,7 +42,11 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut
 
 
 @router.get("/me", response_model=UserOut)
-def get_current_user_profile(current_user: User = Depends(get_current_user)) -> UserOut:
+def get_current_user_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserOut:
+    sync_admin_access(current_user, db)
     return UserOut(
         id=current_user.id,
         full_name=current_user.full_name,
@@ -58,14 +63,16 @@ def login_user(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
+    is_admin = sync_admin_access(user, db)
     user.last_login_at = datetime.utcnow()
     db.commit()
+    db.refresh(user)
 
     return Token(
         access_token=create_access_token(user.id),
         token_type="bearer",
         full_name=user.full_name,
-        is_admin=user.is_admin,
+        is_admin=is_admin,
     )
 
 
@@ -113,6 +120,7 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
             google_sub=google_sub,
             auth_provider="google",
             avatar_url=picture,
+            is_admin=is_admin_email(email, db),
         )
         db.add(user)
     else:
@@ -122,6 +130,7 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
         if picture:
             user.avatar_url = picture
 
+    is_admin = sync_admin_access(user, db)
     user.last_login_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
@@ -130,5 +139,5 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
         access_token=create_access_token(user.id),
         token_type="bearer",
         full_name=user.full_name,
-        is_admin=user.is_admin,
+        is_admin=is_admin,
     )

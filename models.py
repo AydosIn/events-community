@@ -18,6 +18,14 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
 
 
+class AdminEmail(Base):
+    __tablename__ = "admin_emails"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
 class Opportunity(Base):
     __tablename__ = "opportunities"
 

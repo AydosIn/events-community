@@ -226,16 +226,15 @@ class AdminUserDetailOut(BaseModel):
 
 
 class AdminCreateIn(BaseModel):
-    full_name: str
     email: EmailStr
-    password: str
 
 
 class AdminOut(BaseModel):
     id: int
-    full_name: str
+    full_name: str | None = None
     email: EmailStr
     created_at: datetime | None = None
+    user_id: int | None = None
 
     class Config:
         from_attributes = True

@@ -6,9 +6,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from config import ACCESS_TOKEN_EXPIRE_HOURS, ALGORITHM, SECRET_KEY
+from config import ACCESS_TOKEN_EXPIRE_HOURS, ADMIN_EMAILS, ALGORITHM, SECRET_KEY
 from database import get_db
-from models import User
+from models import AdminEmail, User
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -57,8 +57,39 @@ def get_current_user(
     return user
 
 
-def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    if not current_user.is_admin:
+def _normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
+def is_admin_email(email: str | None, db: Session) -> bool:
+    normalized_email = _normalize_email(email)
+    if not normalized_email:
+        return False
+
+    if normalized_email in ADMIN_EMAILS:
+        return True
+
+    return db.query(AdminEmail).filter(AdminEmail.email == normalized_email).first() is not None
+
+
+def sync_admin_access(user: User, db: Session) -> bool:
+    if user.is_admin:
+        return True
+
+    if not is_admin_email(user.email, db):
+        return False
+
+    user.is_admin = True
+    db.commit()
+    db.refresh(user)
+    return True
+
+
+def get_admin_user(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if not sync_admin_access(current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
