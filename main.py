@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 import models
-from config import ADMIN_EMAILS, CORS_ORIGINS
+from config import ADMIN_EMAILS, CORS_ORIGINS, get_database_path_for_health
 from database import Base, SessionLocal, engine
 from models import AdminEmail
 from routers import admin, auth, opportunities, registrations
@@ -144,12 +144,27 @@ def root():
 
 @app.get("/health")
 def health():
+    database_path = get_database_path_for_health()
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        return {"status": "ok", "database": "ok"}
+            inspector = inspect(engine)
+            user_count = 0
+            if "users" in inspector.get_table_names():
+                user_count = connection.execute(text("SELECT COUNT(*) FROM users")).scalar() or 0
+        return {
+            "status": "ok",
+            "database": "ok",
+            "database_path": database_path,
+            "users_count": user_count,
+        }
     except Exception as exc:
-        return {"status": "error", "database": "unavailable", "detail": str(exc)}
+        return {
+            "status": "error",
+            "database": "unavailable",
+            "database_path": database_path,
+            "detail": str(exc),
+        }
 
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])

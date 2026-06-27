@@ -63,6 +63,19 @@ def _get_secret_key() -> str:
 
 
 DATABASE_URL = _get_database_url()
+
+
+def get_database_path_for_health() -> str:
+    if not DATABASE_URL.startswith("sqlite"):
+        return DATABASE_URL
+
+    db_path = DATABASE_URL.removeprefix("sqlite:///")
+    if db_path == ":memory:":
+        return ":memory:"
+
+    return str(Path(db_path).resolve())
+
+
 SECRET_KEY = _get_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))

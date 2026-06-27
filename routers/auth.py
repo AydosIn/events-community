@@ -15,22 +15,15 @@ from security import create_access_token, get_current_user, hash_password, is_ad
 router = APIRouter()
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
-    existing_user = db.query(User).filter(User.email == payload.email.lower()).first()
-    if existing_user is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
 
-    user = User(
-        full_name=payload.full_name,
-        email=payload.email.lower(),
-        password_hash=hash_password(payload.password),
-        auth_provider="local",
-        is_admin=is_admin_email(payload.email, db),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+
+def _is_google_only_user(user: User) -> bool:
+    return not user.password_hash and bool(user.google_sub or user.auth_provider == "google")
+
+
+def _user_to_out(user: User) -> UserOut:
     return UserOut(
         id=user.id,
         full_name=user.full_name,
@@ -39,6 +32,46 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut
         avatar_url=user.avatar_url,
         is_admin=user.is_admin,
     )
+
+
+def _issue_token(db: Session, user: User) -> Token:
+    is_admin = sync_admin_access(user, db)
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return Token(
+        access_token=create_access_token(user.id),
+        token_type="bearer",
+        full_name=user.full_name,
+        is_admin=is_admin,
+    )
+
+
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
+    email = _normalize_email(payload.email)
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user is not None:
+        if _is_google_only_user(existing_user):
+            existing_user.password_hash = hash_password(payload.password)
+            existing_user.full_name = existing_user.full_name or payload.full_name
+            db.commit()
+            db.refresh(existing_user)
+            return _issue_token(db, existing_user)
+
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    user = User(
+        full_name=payload.full_name,
+        email=email,
+        password_hash=hash_password(payload.password),
+        auth_provider="local",
+        is_admin=is_admin_email(email, db),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _issue_token(db, user)
 
 
 @router.get("/me", response_model=UserOut)
@@ -59,21 +92,23 @@ def get_current_user_profile(
 
 @router.post("/login", response_model=Token)
 def login_user(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
-    user = db.query(User).filter(User.email == payload.email.lower()).first()
-    if user is None or not verify_password(payload.password, user.password_hash):
+    email = _normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    is_admin = sync_admin_access(user, db)
-    user.last_login_at = datetime.utcnow()
-    db.commit()
-    db.refresh(user)
+    if not user.password_hash:
+        if _is_google_only_user(user):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="This account uses Google sign-in. Please use the Google button below.",
+            )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    return Token(
-        access_token=create_access_token(user.id),
-        token_type="bearer",
-        full_name=user.full_name,
-        is_admin=is_admin,
-    )
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    return _issue_token(db, user)
 
 
 @router.post("/google", response_model=Token)

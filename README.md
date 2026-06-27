@@ -46,7 +46,13 @@ Tables are created automatically on startup via `Base.metadata.create_all`.
 
 ## Health check
 
-`GET /health` returns database status, for example `{"status":"ok","database":"ok"}`.
+`GET /health` returns database status and path, for example:
+
+```json
+{"status":"ok","database":"ok","database_path":"/var/data/events_community.db","users_count":3}
+```
+
+Use this to confirm production is reading/writing the same SQLite file between deploys.
 
 ## Backups
 

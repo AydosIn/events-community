@@ -168,5 +168,84 @@ def test_admin_can_export_registrations_csv(client: TestClient):
 def test_health_reports_database_status(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-    assert response.json()["database"] == "ok"
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["database"] == "ok"
+    assert "database_path" in body
+    assert "users_count" in body
+
+
+def test_register_returns_token(client: TestClient):
+    response = register_user(client, "token@example.com", "password123")
+    assert response.status_code == 201
+    body = response.json()
+    assert body["access_token"]
+    assert body["token_type"] == "bearer"
+    assert body["full_name"] == "Test Member"
+
+
+def test_duplicate_email_signup_is_blocked(client: TestClient):
+    first = register_user(client, "duplicate@example.com", "password123")
+    second = register_user(client, "duplicate@example.com", "password123")
+
+    assert first.status_code == 201
+    assert second.status_code == 400
+    assert second.json()["detail"] == "Email already registered"
+
+
+def test_register_then_login_again(client: TestClient):
+    register_user(client, "repeat@example.com", "password123")
+    first_login = login_user(client, "repeat@example.com", "password123")
+    second_login = login_user(client, "repeat@example.com", "password123")
+
+    assert first_login.status_code == 200
+    assert second_login.status_code == 200
+
+
+def test_google_only_user_gets_clear_login_error(client: TestClient):
+    from database import get_db
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        db.add(
+            User(
+                full_name="Google User",
+                email="google@example.com",
+                password_hash=None,
+                google_sub="google-sub-123",
+                auth_provider="google",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = login_user(client, "google@example.com", "password123")
+    assert response.status_code == 401
+    assert "Google sign-in" in response.json()["detail"]
+
+
+def test_google_only_user_can_add_password_via_register(client: TestClient):
+    from database import get_db
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        db.add(
+            User(
+                full_name="Google User",
+                email="link@example.com",
+                password_hash=None,
+                google_sub="google-sub-456",
+                auth_provider="google",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    register_response = register_user(client, "link@example.com", "password123")
+    login_response = login_user(client, "link@example.com", "password123")
+
+    assert register_response.status_code == 201
+    assert register_response.json()["access_token"]
+    assert login_response.status_code == 200
