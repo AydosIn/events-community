@@ -307,6 +307,7 @@ def delete_admin_registration(
 @router.get("/opportunities", response_model=AdminOpportunityListOut)
 def list_admin_opportunities(
     q: str = "",
+    type: str = "",
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -315,6 +316,10 @@ def list_admin_opportunities(
     limit, offset = _normalize_pagination(limit, offset)
 
     query = db.query(Opportunity)
+    selected_type = type.strip().lower()
+    if selected_type:
+        query = query.filter(func.lower(Opportunity.type) == selected_type)
+
     search = q.strip()
     if search:
         pattern = f"%{search}%"
