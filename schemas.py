@@ -1,12 +1,35 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+
+from validators import (
+    validate_age,
+    validate_full_name,
+    validate_opportunity_description,
+    validate_opportunity_title,
+    validate_opportunity_type,
+    validate_password,
+    validate_person_name,
+    validate_phone_number,
+    validate_region_name,
+    validate_telegram_username,
+)
 
 
 class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str
+
+    @field_validator("full_name")
+    @classmethod
+    def check_full_name(cls, value: str) -> str:
+        return validate_full_name(value)
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        return validate_password(value)
 
 
 class UserLogin(BaseModel):
@@ -45,6 +68,31 @@ class RegistrationCreate(BaseModel):
     phone_number: str
     telegram_username: str
 
+    @field_validator("first_name")
+    @classmethod
+    def check_first_name(cls, value: str) -> str:
+        return validate_person_name(value, "First name")
+
+    @field_validator("last_name")
+    @classmethod
+    def check_last_name(cls, value: str) -> str:
+        return validate_person_name(value, "Last name")
+
+    @field_validator("age")
+    @classmethod
+    def check_age(cls, value: int) -> int:
+        return validate_age(value)
+
+    @field_validator("phone_number")
+    @classmethod
+    def check_phone_number(cls, value: str) -> str:
+        return validate_phone_number(value)
+
+    @field_validator("telegram_username")
+    @classmethod
+    def check_telegram_username(cls, value: str) -> str:
+        return validate_telegram_username(value)
+
 
 class OpportunityOut(BaseModel):
     id: int
@@ -81,12 +129,52 @@ class OpportunityCreate(BaseModel):
     type: str
     region_name: str
 
+    @field_validator("title")
+    @classmethod
+    def check_title(cls, value: str) -> str:
+        return validate_opportunity_title(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: str) -> str:
+        return validate_opportunity_description(value)
+
+    @field_validator("type")
+    @classmethod
+    def check_type(cls, value: str) -> str:
+        return validate_opportunity_type(value)
+
+    @field_validator("region_name")
+    @classmethod
+    def check_region_name(cls, value: str) -> str:
+        return validate_region_name(value)
+
 
 class OpportunityUpdate(BaseModel):
     title: str
     description: str
     type: str
     region_name: str
+
+    @field_validator("title")
+    @classmethod
+    def check_title(cls, value: str) -> str:
+        return validate_opportunity_title(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: str) -> str:
+        return validate_opportunity_description(value)
+
+    @field_validator("type")
+    @classmethod
+    def check_type(cls, value: str) -> str:
+        return validate_opportunity_type(value)
+
+    @field_validator("region_name")
+    @classmethod
+    def check_region_name(cls, value: str) -> str:
+        return validate_region_name(value)
 
 
 class AdminOverviewOut(BaseModel):
@@ -158,6 +246,31 @@ class AdminRegistrationUpdate(BaseModel):
     age: int
     phone_number: str
     telegram_username: str
+
+    @field_validator("first_name")
+    @classmethod
+    def check_first_name(cls, value: str) -> str:
+        return validate_person_name(value, "First name")
+
+    @field_validator("last_name")
+    @classmethod
+    def check_last_name(cls, value: str) -> str:
+        return validate_person_name(value, "Last name")
+
+    @field_validator("age")
+    @classmethod
+    def check_age(cls, value: int) -> int:
+        return validate_age(value)
+
+    @field_validator("phone_number")
+    @classmethod
+    def check_phone_number(cls, value: str) -> str:
+        return validate_phone_number(value)
+
+    @field_validator("telegram_username")
+    @classmethod
+    def check_telegram_username(cls, value: str) -> str:
+        return validate_telegram_username(value)
 
 
 class AdminRegistrationDetailOut(BaseModel):

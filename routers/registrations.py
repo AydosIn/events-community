@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Opportunity, Registration, User
 from schemas import RegisteredIdsOut, RegistrationCreate, RegistrationOut
 from security import get_current_user
+from validators import normalize_telegram_username
 
 
 router = APIRouter()
@@ -34,14 +36,18 @@ def create_registration(
     registration = Registration(
         user_id=current_user.id,
         opportunity_id=payload.opportunity_id,
-        first_name=payload.first_name.strip(),
-        last_name=payload.last_name.strip(),
+        first_name=payload.first_name,
+        last_name=payload.last_name,
         age=payload.age,
-        phone_number=payload.phone_number.strip(),
-        telegram_username=payload.telegram_username.strip().lstrip("@"),
+        phone_number=payload.phone_number,
+        telegram_username=normalize_telegram_username(payload.telegram_username),
     )
     db.add(registration)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already registered") from exc
     db.refresh(registration)
     return registration
 

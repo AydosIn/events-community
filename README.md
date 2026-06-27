@@ -46,4 +46,20 @@ Tables are created automatically on startup via `Base.metadata.create_all`.
 
 ## Health check
 
-`GET /health` returns `{"status":"ok"}`.
+`GET /health` returns database status, for example `{"status":"ok","database":"ok"}`.
+
+## Backups
+
+Create a SQLite backup with:
+
+```powershell
+python scripts/backup_db.py
+```
+
+Backups are saved next to the database file in a `backups` folder.
+
+## Tests
+
+```powershell
+pytest
+```

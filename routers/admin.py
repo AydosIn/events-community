@@ -1,9 +1,13 @@
+import csv
+import io
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from audit import log_admin_action
 from config import ADMIN_EMAILS
 from database import get_db
 from models import AdminEmail, Opportunity, Registration, User
@@ -39,6 +43,54 @@ def _normalize_pagination(limit: int, offset: int) -> tuple[int, int]:
     safe_limit = max(1, min(limit, 100))
     safe_offset = max(0, offset)
     return safe_limit, safe_offset
+
+
+def _build_registrations_query(
+    db: Session,
+    *,
+    opportunity_id: int | None = None,
+    type: str | None = None,
+    q: str = "",
+):
+    query = (
+        db.query(
+            Registration.id,
+            Registration.created_at,
+            User.id.label("user_id"),
+            User.full_name.label("user_name"),
+            User.email.label("user_email"),
+            Opportunity.id.label("opportunity_id"),
+            Opportunity.title.label("opportunity_title"),
+            Opportunity.type.label("opportunity_type"),
+            Opportunity.region_name.label("region_name"),
+            Registration.first_name,
+            Registration.last_name,
+            Registration.age,
+            Registration.phone_number,
+            Registration.telegram_username,
+        )
+        .join(User, User.id == Registration.user_id)
+        .join(Opportunity, Opportunity.id == Registration.opportunity_id)
+    )
+
+    if opportunity_id is not None:
+        query = query.filter(Registration.opportunity_id == opportunity_id)
+
+    if type is not None and type.strip():
+        query = query.filter(Opportunity.type == type.strip().lower())
+
+    search = q.strip()
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(pattern),
+                User.email.ilike(pattern),
+                Opportunity.title.ilike(pattern),
+            )
+        )
+
+    return query
 
 
 @router.get("/overview", response_model=AdminOverviewOut)
@@ -149,43 +201,12 @@ def list_admin_registrations(
 ) -> AdminRegistrationListOut:
     limit, offset = _normalize_pagination(limit, offset)
 
-    query = (
-        db.query(
-            Registration.id,
-            Registration.created_at,
-            User.id.label("user_id"),
-            User.full_name.label("user_name"),
-            User.email.label("user_email"),
-            Opportunity.id.label("opportunity_id"),
-            Opportunity.title.label("opportunity_title"),
-            Opportunity.type.label("opportunity_type"),
-            Opportunity.region_name.label("region_name"),
-            Registration.first_name,
-            Registration.last_name,
-            Registration.age,
-            Registration.phone_number,
-            Registration.telegram_username,
-        )
-        .join(User, User.id == Registration.user_id)
-        .join(Opportunity, Opportunity.id == Registration.opportunity_id)
+    query = _build_registrations_query(
+        db,
+        opportunity_id=opportunity_id,
+        type=type,
+        q=q,
     )
-
-    if opportunity_id is not None:
-        query = query.filter(Registration.opportunity_id == opportunity_id)
-
-    if type is not None and type.strip():
-        query = query.filter(Opportunity.type == type.strip().lower())
-
-    search = q.strip()
-    if search:
-        pattern = f"%{search}%"
-        query = query.filter(
-            or_(
-                User.full_name.ilike(pattern),
-                User.email.ilike(pattern),
-                Opportunity.title.ilike(pattern),
-            )
-        )
 
     total = query.count()
     rows = (
@@ -216,6 +237,71 @@ def list_admin_registrations(
     ]
 
     return AdminRegistrationListOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/registrations/export")
+def export_admin_registrations(
+    opportunity_id: int | None = None,
+    type: str | None = None,
+    q: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    rows = (
+        _build_registrations_query(
+            db,
+            opportunity_id=opportunity_id,
+            type=type,
+            q=q,
+        )
+        .order_by(Registration.created_at.desc(), Registration.id.desc())
+        .all()
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "created_at",
+            "user_name",
+            "user_email",
+            "opportunity_title",
+            "opportunity_type",
+            "region_name",
+            "first_name",
+            "last_name",
+            "age",
+            "phone_number",
+            "telegram_username",
+        ]
+    )
+
+    for row in rows:
+        writer.writerow(
+            [
+                row.id,
+                row.created_at.isoformat() if row.created_at else "",
+                row.user_name,
+                row.user_email,
+                row.opportunity_title,
+                row.opportunity_type,
+                row.region_name,
+                row.first_name,
+                row.last_name,
+                row.age,
+                row.phone_number,
+                row.telegram_username,
+            ]
+        )
+
+    output.seek(0)
+    filename = f"registrations-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/registrations/{registration_id}", response_model=AdminRegistrationDetailOut)
@@ -273,18 +359,25 @@ def update_admin_registration(
     registration_id: int,
     payload: AdminRegistrationUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ) -> AdminRegistrationDetailOut:
     registration = db.get(Registration, registration_id)
     if registration is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found")
 
-    registration.first_name = payload.first_name.strip()
-    registration.last_name = payload.last_name.strip()
+    registration.first_name = payload.first_name
+    registration.last_name = payload.last_name
     registration.age = payload.age
-    registration.phone_number = payload.phone_number.strip()
-    registration.telegram_username = payload.telegram_username.strip().lstrip("@")
+    registration.phone_number = payload.phone_number
+    registration.telegram_username = payload.telegram_username
 
+    log_admin_action(
+        db,
+        current_admin,
+        action="update_registration",
+        entity_type="registration",
+        entity_id=str(registration_id),
+    )
     db.commit()
 
     return get_admin_registration(registration_id=registration_id, db=db)
@@ -294,12 +387,19 @@ def update_admin_registration(
 def delete_admin_registration(
     registration_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ) -> None:
     registration = db.get(Registration, registration_id)
     if registration is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found")
 
+    log_admin_action(
+        db,
+        current_admin,
+        action="delete_registration",
+        entity_type="registration",
+        entity_id=str(registration_id),
+    )
     db.delete(registration)
     db.commit()
 
@@ -341,15 +441,24 @@ def list_admin_opportunities(
 def create_admin_opportunity(
     payload: OpportunityCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ) -> OpportunityOut:
     opportunity = Opportunity(
-        title=payload.title.strip(),
-        description=payload.description.strip(),
-        type=payload.type.strip(),
-        region_name=payload.region_name.strip(),
+        title=payload.title,
+        description=payload.description,
+        type=payload.type,
+        region_name=payload.region_name,
     )
     db.add(opportunity)
+    db.flush()
+    log_admin_action(
+        db,
+        current_admin,
+        action="create_opportunity",
+        entity_type="opportunity",
+        entity_id=str(opportunity.id),
+        details=f"{opportunity.type}: {opportunity.title}",
+    )
     db.commit()
     db.refresh(opportunity)
     return opportunity
@@ -360,17 +469,25 @@ def update_admin_opportunity(
     opportunity_id: int,
     payload: OpportunityUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ) -> OpportunityOut:
     opportunity = db.get(Opportunity, opportunity_id)
     if opportunity is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found")
 
-    opportunity.title = payload.title.strip()
-    opportunity.description = payload.description.strip()
-    opportunity.type = payload.type.strip()
-    opportunity.region_name = payload.region_name.strip()
+    opportunity.title = payload.title
+    opportunity.description = payload.description
+    opportunity.type = payload.type
+    opportunity.region_name = payload.region_name
 
+    log_admin_action(
+        db,
+        current_admin,
+        action="update_opportunity",
+        entity_type="opportunity",
+        entity_id=str(opportunity_id),
+        details=f"{opportunity.type}: {opportunity.title}",
+    )
     db.commit()
     db.refresh(opportunity)
     return opportunity
@@ -380,12 +497,20 @@ def update_admin_opportunity(
 def delete_admin_opportunity(
     opportunity_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ) -> None:
     opportunity = db.get(Opportunity, opportunity_id)
     if opportunity is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found")
 
+    log_admin_action(
+        db,
+        current_admin,
+        action="delete_opportunity",
+        entity_type="opportunity",
+        entity_id=str(opportunity_id),
+        details=f"{opportunity.type}: {opportunity.title}",
+    )
     db.query(Registration).filter(Registration.opportunity_id == opportunity_id).delete()
     db.delete(opportunity)
     db.commit()
@@ -539,7 +664,7 @@ def list_admins(
 def create_admin(
     payload: AdminCreateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ) -> AdminOut:
     email = payload.email.lower()
     existing_admin_email = db.query(AdminEmail).filter(AdminEmail.email == email).first()
@@ -553,6 +678,13 @@ def create_admin(
     if existing_user is not None:
         existing_user.is_admin = True
 
+    log_admin_action(
+        db,
+        current_admin,
+        action="add_admin",
+        entity_type="admin_email",
+        entity_id=email,
+    )
     db.commit()
     db.refresh(admin_email)
     return AdminOut(
@@ -588,4 +720,11 @@ def revoke_admin(
     if target is not None:
         target.is_admin = False
 
+    log_admin_action(
+        db,
+        current_admin,
+        action="revoke_admin",
+        entity_type="admin_email",
+        entity_id=normalized_email,
+    )
     db.commit()

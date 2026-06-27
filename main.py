@@ -113,12 +113,27 @@ def ensure_registration_profile_columns() -> None:
             connection.execute(text("UPDATE registrations SET telegram_username = '' WHERE telegram_username IS NULL"))
 
 
+def ensure_registration_unique_index() -> None:
+    inspector = inspect(engine)
+    if "registrations" not in inspector.get_table_names():
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_opportunity "
+                "ON registrations (user_id, opportunity_id)"
+            )
+        )
+
+
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
     ensure_user_auth_columns()
     ensure_is_admin_column()
     ensure_registration_profile_columns()
+    ensure_registration_unique_index()
     bootstrap_admin_emails()
 
 
@@ -129,7 +144,12 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "ok"}
+    except Exception as exc:
+        return {"status": "error", "database": "unavailable", "detail": str(exc)}
 
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
