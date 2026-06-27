@@ -61,5 +61,6 @@ Backups are saved next to the database file in a `backups` folder.
 ## Tests
 
 ```powershell
+pip install -r requirements-dev.txt
 pytest
 ```
