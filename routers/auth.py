@@ -131,7 +131,7 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
             detail="Invalid Google credential",
         ) from exc
 
-    email = (token_info.get("email") or "").lower()
+    email = _normalize_email(token_info.get("email") or "")
     google_sub = token_info.get("sub")
     full_name = token_info.get("name") or email.split("@")[0] or "Community Member"
     picture = token_info.get("picture")
@@ -161,18 +161,9 @@ def login_with_google(payload: GoogleAuthIn, db: Session = Depends(get_db)) -> T
     else:
         user.full_name = user.full_name or full_name
         user.google_sub = google_sub
-        user.auth_provider = "google"
+        if not user.password_hash:
+            user.auth_provider = "google"
         if picture:
             user.avatar_url = picture
 
-    is_admin = sync_admin_access(user, db)
-    user.last_login_at = datetime.utcnow()
-    db.commit()
-    db.refresh(user)
-
-    return Token(
-        access_token=create_access_token(user.id),
-        token_type="bearer",
-        full_name=user.full_name,
-        is_admin=is_admin,
-    )
+    return _issue_token(db, user)

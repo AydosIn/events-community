@@ -16,6 +16,19 @@ FastAPI backend with SQLite for the Events Community MVP.
 
 Copy `.env.example` to `.env` for local development.
 
+### Google sign-in setup
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create an OAuth 2.0 **Web application** client.
+2. Add authorized JavaScript origins for every frontend URL you use, for example:
+   - `http://localhost:3000`
+   - `https://events-community-frontend.vercel.app`
+3. Set the same client ID in both places:
+   - Backend `.env`: `GOOGLE_CLIENT_ID`
+   - Frontend `.env.local`: `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+4. Ensure backend `CORS_ORIGINS` includes your frontend origin.
+
+Google sign-in uses the Google Identity Services ID-token flow. The frontend sends the credential to `POST /auth/google`, and the backend verifies it with `GOOGLE_CLIENT_ID` before issuing the app's JWT.
+
 ## Local run
 
 ```powershell

@@ -1,6 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,6 +67,27 @@ def register_user(client: TestClient, email: str = "member@example.com", passwor
 
 def login_user(client: TestClient, email: str = "member@example.com", password: str = "password123"):
     return client.post("/auth/login", json={"email": email, "password": password})
+
+
+def google_auth(client: TestClient, credential: str = "fake-google-credential"):
+    return client.post("/auth/google", json={"credential": credential})
+
+
+def google_token_info(
+    *,
+    email: str = "newgoogle@example.com",
+    sub: str = "google-sub-new",
+    name: str = "New Google User",
+    picture: str = "https://example.com/photo.jpg",
+    email_verified: bool = True,
+):
+    return {
+        "email": email,
+        "sub": sub,
+        "name": name,
+        "picture": picture,
+        "email_verified": email_verified,
+    }
 
 
 def get_admin_token(client: TestClient):
@@ -249,3 +271,120 @@ def test_google_only_user_can_add_password_via_register(client: TestClient):
     assert register_response.status_code == 201
     assert register_response.json()["access_token"]
     assert login_response.status_code == 200
+
+
+@patch("routers.auth.GOOGLE_CLIENT_ID", "test-google-client-id.apps.googleusercontent.com")
+@patch(
+    "routers.auth.google_id_token.verify_oauth2_token",
+    return_value=google_token_info(),
+)
+def test_google_auth_creates_new_user(mock_verify, client: TestClient):
+    response = google_auth(client)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"]
+    assert body["token_type"] == "bearer"
+    assert body["full_name"] == "New Google User"
+    mock_verify.assert_called_once()
+
+    from database import get_db
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        user = db.query(User).filter(User.email == "newgoogle@example.com").first()
+        assert user is not None
+        assert user.google_sub == "google-sub-new"
+        assert user.auth_provider == "google"
+        assert user.password_hash is None
+        assert user.avatar_url == "https://example.com/photo.jpg"
+    finally:
+        db.close()
+
+
+@patch("routers.auth.GOOGLE_CLIENT_ID", "test-google-client-id.apps.googleusercontent.com")
+@patch(
+    "routers.auth.google_id_token.verify_oauth2_token",
+    return_value=google_token_info(
+        email="LinkMe@Example.com",
+        sub="google-sub-link",
+        name="Linked Google User",
+    ),
+)
+def test_google_auth_links_existing_email_password_account(mock_verify, client: TestClient):
+    register_user(client, "linkme@example.com", "password123")
+
+    response = google_auth(client)
+
+    assert response.status_code == 200
+    assert response.json()["access_token"]
+
+    from database import get_db
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        user = db.query(User).filter(User.email == "linkme@example.com").first()
+        assert user is not None
+        assert user.google_sub == "google-sub-link"
+        assert user.password_hash is not None
+        assert user.auth_provider == "local"
+    finally:
+        db.close()
+
+    password_login = login_user(client, "linkme@example.com", "password123")
+    assert password_login.status_code == 200
+
+
+@patch("routers.auth.GOOGLE_CLIENT_ID", "test-google-client-id.apps.googleusercontent.com")
+@patch(
+    "routers.auth.google_id_token.verify_oauth2_token",
+    return_value=google_token_info(email="repeatgoogle@example.com", sub="google-sub-repeat"),
+)
+def test_google_auth_repeat_login_finds_existing_google_sub(mock_verify, client: TestClient):
+    first = google_auth(client)
+    second = google_auth(client)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    from database import get_db
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        users = db.query(User).filter(User.email == "repeatgoogle@example.com").all()
+        assert len(users) == 1
+        assert users[0].google_sub == "google-sub-repeat"
+    finally:
+        db.close()
+
+
+@patch("routers.auth.GOOGLE_CLIENT_ID", "")
+def test_google_auth_returns_503_when_not_configured(client: TestClient):
+    response = google_auth(client)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Google sign-in is not configured yet"
+
+
+@patch("routers.auth.GOOGLE_CLIENT_ID", "test-google-client-id.apps.googleusercontent.com")
+@patch(
+    "routers.auth.google_id_token.verify_oauth2_token",
+    side_effect=ValueError("invalid token"),
+)
+def test_google_auth_rejects_invalid_credential(mock_verify, client: TestClient):
+    response = google_auth(client)
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid Google credential"
+
+
+@patch("routers.auth.GOOGLE_CLIENT_ID", "test-google-client-id.apps.googleusercontent.com")
+@patch(
+    "routers.auth.google_id_token.verify_oauth2_token",
+    return_value=google_token_info(email="unverified@example.com", email_verified=False),
+)
+def test_google_auth_rejects_unverified_email(mock_verify, client: TestClient):
+    response = google_auth(client)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Google account is missing required verified profile data"

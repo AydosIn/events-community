@@ -50,6 +50,13 @@ def ensure_user_auth_columns() -> None:
                 # still works there because Google-created users do not need a local password.
                 pass
 
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub "
+                "ON users (google_sub) WHERE google_sub IS NOT NULL"
+            )
+        )
+
 
 def ensure_is_admin_column() -> None:
     inspector = inspect(engine)
