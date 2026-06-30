@@ -11,7 +11,7 @@ FastAPI backend with SQLite for the Events Community MVP.
 | `CORS_ORIGINS` | Yes (production) | Comma-separated frontend origins, e.g. `https://your-app.vercel.app` |
 | `GOOGLE_CLIENT_ID` | For Google login | Same OAuth client ID as the frontend |
 | `ADMIN_EMAILS` | Yes | Comma-separated emails that receive admin access |
-| `ACCESS_TOKEN_EXPIRE_HOURS` | No | Default `24` |
+| `ACCESS_TOKEN_EXPIRE_HOURS` | No | Default `720` (30 days) |
 | `ENVIRONMENT` | No | Set to `production` on Render |
 
 Copy `.env.example` to `.env` for local development.
@@ -37,6 +37,12 @@ python -m venv .venv
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
+
+## Production Storage
+
+Production must set `DATABASE_URL` to a SQLite file on persistent storage. If the
+backend runs with the local default database path on an ephemeral app filesystem,
+new users can disappear after a restart or deploy.
 
 ## Production (Render)
 

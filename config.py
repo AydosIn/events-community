@@ -47,6 +47,10 @@ def _get_database_url() -> str:
         raise RuntimeError(
             "Only SQLite is supported. Set DATABASE_URL to a sqlite:// path or leave it unset for the default."
         )
+    if not database_url and _is_production():
+        raise RuntimeError(
+            "DATABASE_URL is required in production. Point it at a SQLite file on persistent storage."
+        )
     return database_url or DEFAULT_DATABASE_URL
 
 
@@ -78,7 +82,7 @@ def get_database_path_for_health() -> str:
 
 SECRET_KEY = _get_secret_key()
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
+ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "720"))
 CORS_ORIGINS = _unique_values(
     _split_csv(os.getenv("CORS_ORIGINS", "http://localhost:3000")) + DEPLOYED_FRONTEND_ORIGINS
 )
