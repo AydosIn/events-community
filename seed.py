@@ -2,9 +2,8 @@
 Seed sample opportunities into the database.
 
 Local:  python seed.py
-Production (one-time demo): run once after deploy with DATABASE_URL pointing at the
-persistent SQLite file, or use the Render shell. Skip this if you will add real
-opportunities through the admin UI instead.
+Production (one-time demo): run once after deploy with DATABASE_URL pointing at your
+PostgreSQL database. Skip this if you will add real opportunities through the admin UI instead.
 """
 
 from database import Base, SessionLocal, engine

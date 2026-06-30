@@ -7,12 +7,14 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from config import DATABASE_URL
+from config import DATABASE_URL, is_sqlite_url
 
 
 def resolve_database_path() -> Path:
-    if not DATABASE_URL.startswith("sqlite:///"):
-        raise RuntimeError("Backup script only supports SQLite databases.")
+    if not is_sqlite_url(DATABASE_URL):
+        raise RuntimeError(
+            "Backup script only supports SQLite databases. Use pg_dump for PostgreSQL."
+        )
 
     db_path = DATABASE_URL.removeprefix("sqlite:///")
     if db_path == ":memory:":

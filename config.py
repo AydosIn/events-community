@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -41,17 +42,48 @@ def _is_development() -> bool:
     return os.getenv("ENVIRONMENT", "").lower() in {"", "development", "local"}
 
 
+def normalize_database_url(database_url: str) -> str:
+    """Normalize provider URLs for SQLAlchemy + psycopg."""
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://") :]
+
+    if database_url.startswith("postgresql://"):
+        database_url = "postgresql+psycopg://" + database_url[len("postgresql://") :]
+
+    return database_url
+
+
+def is_sqlite_url(database_url: str) -> bool:
+    return database_url.startswith("sqlite")
+
+
+def is_postgresql_url(database_url: str) -> bool:
+    return database_url.startswith("postgresql")
+
+
 def _get_database_url() -> str:
     database_url = os.getenv("DATABASE_URL", "").strip()
-    if database_url and not database_url.startswith("sqlite"):
+
+    if not database_url:
+        if _is_production():
+            raise RuntimeError(
+                "DATABASE_URL is required in production. Set it to your PostgreSQL connection string."
+            )
+        return DEFAULT_DATABASE_URL
+
+    database_url = normalize_database_url(database_url)
+
+    if _is_production() and is_sqlite_url(database_url):
         raise RuntimeError(
-            "Only SQLite is supported. Set DATABASE_URL to a sqlite:// path or leave it unset for the default."
+            "SQLite is for local development only. Set DATABASE_URL to a PostgreSQL connection string in production."
         )
-    if not database_url and _is_production():
+
+    if not is_sqlite_url(database_url) and not is_postgresql_url(database_url):
         raise RuntimeError(
-            "DATABASE_URL is required in production. Point it at a SQLite file on persistent storage."
+            "DATABASE_URL must be a SQLite or PostgreSQL connection string."
         )
-    return database_url or DEFAULT_DATABASE_URL
+
+    return database_url
 
 
 def _get_secret_key() -> str:
@@ -69,15 +101,31 @@ def _get_secret_key() -> str:
 DATABASE_URL = _get_database_url()
 
 
-def get_database_path_for_health() -> str:
-    if not DATABASE_URL.startswith("sqlite"):
-        return DATABASE_URL
+def get_database_info_for_health() -> dict[str, str]:
+    if is_sqlite_url(DATABASE_URL):
+        db_path = DATABASE_URL.removeprefix("sqlite:///")
+        if db_path == ":memory:":
+            resolved_path = ":memory:"
+        else:
+            resolved_path = str(Path(db_path).resolve())
 
-    db_path = DATABASE_URL.removeprefix("sqlite:///")
-    if db_path == ":memory:":
-        return ":memory:"
+        return {
+            "database_backend": "sqlite",
+            "database_path": resolved_path,
+        }
 
-    return str(Path(db_path).resolve())
+    parsed = urlparse(DATABASE_URL)
+    safe_netloc = parsed.hostname or "unknown-host"
+    if parsed.port:
+        safe_netloc = f"{safe_netloc}:{parsed.port}"
+
+    database_name = parsed.path.lstrip("/") or "unknown"
+
+    return {
+        "database_backend": "postgresql",
+        "database_host": safe_netloc,
+        "database_name": database_name,
+    }
 
 
 SECRET_KEY = _get_secret_key()

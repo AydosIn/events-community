@@ -1,18 +1,18 @@
 # Events Community Backend
 
-FastAPI backend with SQLite for the Events Community MVP.
+FastAPI backend with PostgreSQL in production and SQLite for local development.
 
 ## Environment
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | No (local) | SQLite path. Default: `./data/events_community.db` |
-| `SECRET_KEY` | Yes (production) | JWT signing secret. Auto-generated on Render via `render.yaml` |
+| `DATABASE_URL` | Yes (production) | PostgreSQL connection string. Local default: `./data/events_community.db` (SQLite) |
+| `SECRET_KEY` | Yes (production) | JWT signing secret — use a long random string |
 | `CORS_ORIGINS` | Yes (production) | Comma-separated frontend origins, e.g. `https://your-app.vercel.app` |
 | `GOOGLE_CLIENT_ID` | For Google login | Same OAuth client ID as the frontend |
 | `ADMIN_EMAILS` | Yes | Comma-separated emails that receive admin access |
 | `ACCESS_TOKEN_EXPIRE_HOURS` | No | Default `720` (30 days) |
-| `ENVIRONMENT` | No | Set to `production` on Render |
+| `ENVIRONMENT` | No | Set to `production` on DigitalOcean |
 
 Copy `.env.example` to `.env` for local development.
 
@@ -38,50 +38,106 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-## Production Storage
+Local dev uses SQLite by default — no Postgres install needed.
 
-Production must set `DATABASE_URL` to a SQLite file on persistent storage. If the
-backend runs with the local default database path on an ephemeral app filesystem,
-new users can disappear after a restart or deploy.
+## Production database (PostgreSQL)
 
-## Production (Render)
+Production requires a PostgreSQL `DATABASE_URL`. Options:
 
-Deploy using [`render.yaml`](render.yaml). It configures:
+- **DigitalOcean Managed PostgreSQL** — use your DO credits; link directly to App Platform
+- [Neon](https://neon.tech) or [Supabase](https://supabase.com) — free external Postgres
 
-- Persistent disk at `/var/data` for SQLite
-- `DATABASE_URL=sqlite:////var/data/events_community.db`
-- Single web instance (required for SQLite)
+The backend accepts `postgresql://...` and `postgres://...` connection strings.
 
-After first deploy, set `CORS_ORIGINS` and `GOOGLE_CLIENT_ID` in the Render dashboard to match your Vercel frontend.
+## Production (DigitalOcean App Platform)
+
+### 1. Create PostgreSQL
+
+1. DigitalOcean dashboard → **Databases** → **Create Database Cluster**
+2. Choose **PostgreSQL**
+3. Pick a region close to your app
+4. Create the cluster
+
+After it is ready, open the database → **Connection Details** → copy the connection string (URI format).
+
+### 2. Create the web app
+
+1. **Apps** → **Create App** → connect your GitHub repo (`AydosIn/events-community`)
+2. Select the backend source directory (repo root if backend is the whole repo)
+3. App Platform should detect Python automatically. If not, set:
+   - **Build command:** `pip install -r requirements.txt`
+   - **Run command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. Under **Resources**, you can add the Postgres database as a linked component — App Platform will inject `DATABASE_URL` automatically
+
+### 3. Set environment variables
+
+In App Platform → your app → **Settings** → **App-Level Environment Variables**:
+
+| Variable | Value |
+|---|---|
+| `ENVIRONMENT` | `production` |
+| `DATABASE_URL` | Postgres connection string (auto-set if database is linked) |
+| `SECRET_KEY` | long random secret |
+| `CORS_ORIGINS` | `https://events-community-frontend.vercel.app` |
+| `GOOGLE_CLIENT_ID` | your Google OAuth client ID |
+| `ADMIN_EMAILS` | `aydosed@gmail.com` |
+| `ACCESS_TOKEN_EXPIRE_HOURS` | `720` |
+
+If you linked the DO database, confirm `DATABASE_URL` uses `postgresql://` or `postgres://` — the backend normalizes both.
+
+### 4. Deploy and verify
+
+After deploy, open:
+
+```
+https://YOUR-APP.ondigitalocean.app/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "database": "ok",
+  "database_backend": "postgresql",
+  "database_host": "your-db-host.db.ondigitalocean.com:25060",
+  "database_name": "defaultdb",
+  "users_count": 0
+}
+```
+
+Tables are created automatically on startup.
+
+### 5. Connect the frontend
+
+In Vercel → **Environment Variables**:
+
+```
+NEXT_PUBLIC_API_BASE_URL=https://YOUR-APP.ondigitalocean.app
+```
+
+Redeploy the frontend after saving.
 
 ### Initial data
 
 Choose one:
 
-1. **Demo content:** Run `python seed.py` once (via Render shell or locally with production `DATABASE_URL`) to insert sample opportunities.
+1. **Demo content:** Run `python seed.py` once locally with production `DATABASE_URL` in `.env`.
 2. **Real content:** Skip seeding; log in as admin and create opportunities from the admin UI.
-
-Tables are created automatically on startup via `Base.metadata.create_all`.
 
 ## Health check
 
-`GET /health` returns database status and path, for example:
-
-```json
-{"status":"ok","database":"ok","database_path":"/var/data/events_community.db","users_count":3}
-```
-
-Use this to confirm production is reading/writing the same SQLite file between deploys.
+`GET /health` returns database status and user count. Use it after deploys to confirm Postgres is connected.
 
 ## Backups
 
-Create a SQLite backup with:
+SQLite local backups:
 
 ```powershell
 python scripts/backup_db.py
 ```
 
-Backups are saved next to the database file in a `backups` folder.
+For PostgreSQL, use DigitalOcean automated backups or `pg_dump`.
 
 ## Tests
 
@@ -89,3 +145,5 @@ Backups are saved next to the database file in a `backups` folder.
 pip install -r requirements-dev.txt
 pytest
 ```
+
+Tests use temporary SQLite databases — no Postgres required to run the test suite.

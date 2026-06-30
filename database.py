@@ -3,11 +3,11 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from config import DATABASE_URL
+from config import DATABASE_URL, is_postgresql_url, is_sqlite_url
 
 
 def _prepare_sqlite_path(database_url: str) -> None:
-    if not database_url.startswith("sqlite"):
+    if not is_sqlite_url(database_url):
         return
 
     db_path = database_url.removeprefix("sqlite:///")
@@ -20,11 +20,14 @@ def _prepare_sqlite_path(database_url: str) -> None:
 def _build_engine(database_url: str):
     _prepare_sqlite_path(database_url)
 
-    connect_args = {}
-    if database_url.startswith("sqlite"):
-        connect_args["check_same_thread"] = False
+    engine_kwargs: dict = {}
 
-    return create_engine(database_url, connect_args=connect_args)
+    if is_sqlite_url(database_url):
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+    elif is_postgresql_url(database_url):
+        engine_kwargs["pool_pre_ping"] = True
+
+    return create_engine(database_url, **engine_kwargs)
 
 
 engine = _build_engine(DATABASE_URL)

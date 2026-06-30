@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
 import models
-from config import ADMIN_EMAILS, CORS_ORIGINS, get_database_path_for_health
+from config import ADMIN_EMAILS, CORS_ORIGINS, get_database_info_for_health
 from database import Base, SessionLocal, engine
-from models import AdminEmail
+from models import AdminEmail, User
 from routers import admin, auth, opportunities, registrations
 
 
@@ -19,6 +19,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _is_sqlite() -> bool:
+    return engine.dialect.name == "sqlite"
+
+
+def _timestamp_type() -> str:
+    return "DATETIME" if _is_sqlite() else "TIMESTAMP"
+
+
+def _boolean_default_false() -> str:
+    return "0" if _is_sqlite() else "false"
 
 
 def ensure_user_auth_columns() -> None:
@@ -40,14 +52,15 @@ def ensure_user_auth_columns() -> None:
             connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR"))
 
         if "last_login_at" not in existing_columns:
-            connection.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+            connection.execute(
+                text(f"ALTER TABLE users ADD COLUMN last_login_at {_timestamp_type()}")
+            )
 
         if "password_hash" in existing_columns:
             try:
                 connection.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
             except Exception:
-                # SQLite does not support altering NOT NULL in place. The application
-                # still works there because Google-created users do not need a local password.
+                # SQLite does not support altering NOT NULL in place.
                 pass
 
         connection.execute(
@@ -67,7 +80,12 @@ def ensure_is_admin_column() -> None:
 
     with engine.begin() as connection:
         if "is_admin" not in existing_columns:
-            connection.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL "
+                    f"DEFAULT {_boolean_default_false()}"
+                )
+            )
 
 
 def bootstrap_admin_emails() -> None:
@@ -78,14 +96,17 @@ def bootstrap_admin_emails() -> None:
     db: Session = SessionLocal()
     try:
         for email in ADMIN_EMAILS:
-            existing_admin_email = db.query(AdminEmail).filter(AdminEmail.email == email.lower()).first()
-            if existing_admin_email is None:
-                db.add(AdminEmail(email=email.lower()))
-
-            db.execute(
-                text("UPDATE users SET is_admin = 1 WHERE LOWER(email) = :email AND is_admin = 0"),
-                {"email": email.lower()},
+            normalized_email = email.lower()
+            existing_admin_email = (
+                db.query(AdminEmail).filter(AdminEmail.email == normalized_email).first()
             )
+            if existing_admin_email is None:
+                db.add(AdminEmail(email=normalized_email))
+
+            db.query(User).filter(
+                func.lower(User.email) == normalized_email,
+                User.is_admin.is_(False),
+            ).update({User.is_admin: True}, synchronize_session=False)
         db.commit()
     finally:
         db.close()
@@ -117,7 +138,9 @@ def ensure_registration_profile_columns() -> None:
 
         if "telegram_username" not in existing_columns:
             connection.execute(text("ALTER TABLE registrations ADD COLUMN telegram_username VARCHAR"))
-            connection.execute(text("UPDATE registrations SET telegram_username = '' WHERE telegram_username IS NULL"))
+            connection.execute(
+                text("UPDATE registrations SET telegram_username = '' WHERE telegram_username IS NULL")
+            )
 
 
 def ensure_registration_unique_index() -> None:
@@ -151,7 +174,7 @@ def root():
 
 @app.get("/health")
 def health():
-    database_path = get_database_path_for_health()
+    database_info = get_database_info_for_health()
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -162,14 +185,14 @@ def health():
         return {
             "status": "ok",
             "database": "ok",
-            "database_path": database_path,
+            **database_info,
             "users_count": user_count,
         }
     except Exception as exc:
         return {
             "status": "error",
             "database": "unavailable",
-            "database_path": database_path,
+            **database_info,
             "detail": str(exc),
         }
 

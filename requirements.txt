@@ -18,6 +18,7 @@ h11==0.16.0
 httptools==0.7.1
 idna==3.11
 oauthlib==3.3.1
+psycopg[binary]==3.2.9
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pydantic==2.11.10
